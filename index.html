@@ -1762,6 +1762,21 @@ footer{background:var(--bg-card2);border-top:1px solid var(--border);padding:1.4
   }
 }
 
+/* ── Lineups tabs (Starting XI / Bench / In-Game Subs) ── */
+.lu-tab-bar{display:flex;gap:2px;background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--r-sm);padding:3px;margin-bottom:0.75rem;}
+.lu-tab-btn{flex:1;padding:0.38rem 0.4rem;border:none;background:transparent;color:var(--text-muted);font-family:'Outfit';font-size:0.67rem;font-weight:700;cursor:pointer;border-radius:calc(var(--r-sm) - 3px);transition:all var(--t);white-space:nowrap;}
+.lu-tab-btn.active{background:rgba(56,189,248,0.1);color:var(--cyan);}
+.lu-tab-panel{display:none;}
+.lu-tab-panel.active{display:block;}
+
+/* ── In-game substitution rows ── */
+.lu-sub-card{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.5rem 0.7rem;margin-bottom:0.35rem;}
+.lu-sub-minute{font-size:0.6rem;font-weight:800;color:var(--cyan);margin-bottom:0.25rem;}
+.lu-sub-out{display:flex;align-items:center;gap:0.35rem;font-size:0.73rem;font-weight:600;color:#ef4444;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lu-sub-in{display:flex;align-items:center;gap:0.35rem;font-size:0.73rem;font-weight:600;color:#22c55e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:0.18rem;}
+.lu-sub-team{font-size:0.58rem;font-weight:700;color:var(--text-muted);margin-top:0.08rem;}
+.lu-no-data{text-align:center;padding:1.2rem 0.5rem;color:var(--text-muted);font-size:0.73rem;}
+  
 </style>
 </head>
 <body>
@@ -7844,44 +7859,65 @@ function _msRender(data, matchName) {
   // Build unified chronological events from all available sources
   var events = [];
 
-  // Parse events array from backend if present
-  var eventsRaw = _parseJSON(s.events || s.EVENTS || s.matchEvents || s.match_events || '');
+ // ── Build unified chronological events ─────────────────────────────
+  var eventsRaw = _parseJSON(
+    s.events || s.EVENTS || s.matchEvents || s.match_events || null
+  );
   if (Array.isArray(eventsRaw)) {
     eventsRaw.forEach(function(ev) { events.push(ev); });
   }
 
-  // Fallback: synthesise events from goalscorers array
-  var scorers = _parseJSON(s.goalscorers || s.GOALSCORERS || '[]') || [];
+  // Goalscorers from postStats
+  var scorers = _parseJSON(s.goalscorers || s.GOALSCORERS || null) || [];
   if (!Array.isArray(scorers)) scorers = [];
-  if (eventsRaw === null || events.length === 0) {
+
+  // Cards — check postStats AND root data (v6 puts them on data.cards)
+  var cardsRaw = _parseJSON(s.cards || s.CARDS || null) || data.cards || [];
+  if (!Array.isArray(cardsRaw)) cardsRaw = [];
+
+  // Substitutions — check postStats AND root data (v6 puts them on data.substitutions)
+  var subsRaw = _parseJSON(
+    s.substitutions || s.SUBSTITUTIONS || s.subs || null
+  ) || data.substitutions || [];
+  if (!Array.isArray(subsRaw)) subsRaw = [];
+
+  if (events.length === 0) {
     scorers.forEach(function(sc) {
-      events.push({ type: sc.ownGoal ? 'owngoal' : (sc.penalty ? 'penalty' : 'goal'),
-                    minute: parseInt(sc.minute) || 0, player: sc.name || sc.player || '',
-                    team: sc.team || '', side: sc.side || 'home' });
+      events.push({
+        type:      sc.ownGoal ? 'owngoal' : (sc.penalty ? 'penalty' : 'goal'),
+        minute:    parseInt(sc.minute) || 0,
+        minuteStr: sc.minute || '',
+        player:    sc.name || sc.player || '',
+        team:      sc.team || '',
+        side:      sc.side || 'home'
+      });
     });
-    // Parse cards array if present
-    var cards = _parseJSON(s.cards || s.CARDS || '[]') || [];
-    if (Array.isArray(cards)) {
-      cards.forEach(function(c) {
-        events.push({ type: (c.type||'yellow').toLowerCase().replace('_card',''),
-                      minute: parseInt(c.minute)||0, player: c.name||c.player||'',
-                      team: c.team||'', side: c.side||'home' });
+    cardsRaw.forEach(function(c) {
+      events.push({
+        type:      (c.type || 'yellow').toLowerCase().replace('_card', ''),
+        minute:    c.minuteNum || parseInt(c.minute) || 0,
+        minuteStr: c.minute || '',
+        player:    c.player || c.name || '',
+        team:      c.team   || '',
+        side:      c.side   || 'home'
       });
-    }
-    // Parse substitutions array if present
-    var subs = _parseJSON(s.substitutions || s.SUBSTITUTIONS || s.subs || '[]') || [];
-    if (Array.isArray(subs)) {
-      subs.forEach(function(sub) {
-        events.push({ type: 'sub', minute: parseInt(sub.minute)||0,
-                      player: sub.playerOut || sub.player_out || sub.out || '',
-                      playerIn: sub.playerIn || sub.player_in || sub.in || '',
-                      team: sub.team||'', side: sub.side||'home' });
+    });
+    subsRaw.forEach(function(sub) {
+      events.push({
+        type:      'sub',
+        minute:    sub.minuteNum || parseInt(sub.minute) || 0,
+        minuteStr: sub.minute || '',
+        player:    sub.playerOut || sub.player_out || sub.out || '',
+        playerIn:  sub.playerIn  || sub.player_in  || sub.in  || '',
+        team:      sub.team  || '',
+        side:      sub.side  || 'home'
       });
-    }
+    });
   }
 
-  // Sort events chronologically
-  events.sort(function(a, b) { return (parseInt(a.minute)||0) - (parseInt(b.minute)||0); });
+  events.sort(function(a, b) {
+    return (parseInt(a.minute) || 0) - (parseInt(b.minute) || 0);
+  });
 
   // ── Render Match Summary section ─────────────────────────────────────
   html += '<div class="ms-section-lbl" style="margin-top:0.95rem;">Match Summary</div>';
@@ -7985,10 +8021,12 @@ function _msRender(data, matchName) {
   }
 
   // ── View Lineups button ───────────────────────────────────────────────
-  var lineups = _parseJSON(s.lineups || s.LINEUPS || s.lineup || '');
-  if (lineups && (lineups.home || lineups.away)) {
+  var lineupsForBtn = _parseJSON(s.lineups || s.LINEUPS || s.lineup || null)
+                   || data.lineups
+                   || null;
+  if (lineupsForBtn && (lineupsForBtn.home || lineupsForBtn.away)) {
     html += '<button class="ms-lineups-btn" onclick="openLineups(' + JSON.stringify(matchName) + ')">'
-          + '👥 View Lineups</button>';
+          + '👥 Lineups &amp; Substitutions</button>';
   }
 
   document.getElementById('msLoading').style.display = 'none';
@@ -8001,7 +8039,7 @@ var _luCache = {};
 
 function openLineups(matchName) {
   var overlay = document.getElementById('lineupsOverlay');
-  document.getElementById('luMatchTitle').textContent    = 'Lineups';
+  document.getElementById('luMatchTitle').textContent    = 'Lineups & Substitutions';
   document.getElementById('luMatchSubtitle').textContent = matchName || '';
   document.getElementById('luLoading').style.display    = 'block';
   document.getElementById('luContent').style.display    = 'none';
@@ -8009,14 +8047,23 @@ function openLineups(matchName) {
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
 
-  // Try to get from match stats cache first
   var cached = _msCache[matchName];
-  if (cached && cached.postStats) {
-    var lineups = _parseJSON((cached.postStats.lineups || cached.postStats.LINEUPS || cached.postStats.lineup || ''));
-    if (lineups) { _luRender(lineups, matchName); return; }
+  if (cached) {
+    var lineups = _parseJSON(
+      (cached.postStats && (cached.postStats.lineups || cached.postStats.LINEUPS || cached.postStats.lineup))
+      || null
+    ) || cached.lineups || null;
+    var subs = cached.substitutions || [];
+    if (lineups || subs.length > 0) {
+      _luRender(lineups, matchName, subs);
+      return;
+    }
   }
-  if (_luCache[matchName]) { _luRender(_luCache[matchName], matchName); return; }
-  _luRender(null, matchName); // show no-data state
+  if (_luCache[matchName]) {
+    _luRender(_luCache[matchName].lineups, matchName, _luCache[matchName].subs || []);
+    return;
+  }
+  _luRender(null, matchName, []);
 }
 
 function closeLineups() {
@@ -8034,64 +8081,104 @@ function luOverlayClose(e) {
   if (e.target === document.getElementById('lineupsOverlay')) closeLineups();
 }
 
-function _luRender(lineups, matchName) {
+function _luRender(lineups, matchName, substitutions) {
   document.getElementById('luLoading').style.display = 'none';
   document.getElementById('luContent').style.display = 'block';
 
-  if (!lineups || (!lineups.home && !lineups.away)) {
+  var subs = Array.isArray(substitutions) ? substitutions : [];
+  var hasLineups = lineups && (lineups.home || lineups.away);
+
+  if (!hasLineups && subs.length === 0) {
     document.getElementById('luContent').innerHTML =
-      '<div class="lu-empty">⏳ Lineup data not available yet.<br><span style="font-size:0.7rem;opacity:.7;">Lineups appear after the match is processed.</span></div>';
+      '<div class="lu-empty">⏳ Lineup data not available yet.' +
+      '<br><span style="font-size:0.7rem;opacity:.7;">Lineups appear after the match is processed.</span></div>';
     return;
   }
 
-  var teams = (matchName || '').split(' - ');
-  var homeTeam = (lineups.home && lineups.home.name) || teams[0] || 'Home';
-  var awayTeam = (lineups.away && lineups.away.name) || teams[1] || 'Away';
-  var homeFmt  = lineups.home && lineups.home.formation ? ' <span class="lu-formation home">' + _msEsc(lineups.home.formation) + '</span>' : '';
-  var awayFmt  = lineups.away && lineups.away.formation ? ' <span class="lu-formation away">' + _msEsc(lineups.away.formation) + '</span>' : '';
+  var teams    = (matchName || '').split(' - ');
+  var homeTeam = (lineups && lineups.home && lineups.home.name) || teams[0] || 'Home';
+  var awayTeam = (lineups && lineups.away && lineups.away.name) || teams[1] || 'Away';
+  var homeFmt  = (lineups && lineups.home && lineups.home.formation)
+                  ? ' <span class="lu-formation home">' + _msEsc(lineups.home.formation) + '</span>' : '';
+  var awayFmt  = (lineups && lineups.away && lineups.away.formation)
+                  ? ' <span class="lu-formation away">' + _msEsc(lineups.away.formation) + '</span>' : '';
 
-  function renderPlayers(arr, isSub) {
-    if (!arr || arr.length === 0) return '';
-    return arr.map(function(p) {
-      var name = typeof p === 'string' ? p : (p.name || p.player || '');
-      var num  = typeof p === 'object' && p.number ? p.number : '';
-      return '<div class="lu-player' + (isSub ? ' sub' : '') + '">'
-           + (num ? '<span class="lu-player-num">' + num + '</span>' : '')
-           + _msEsc(name)
-           + '</div>';
-    }).join('');
+  var homeSubs = subs.filter(function(s) { return s.side === 'home'; });
+  var awaySubs = subs.filter(function(s) { return s.side === 'away'; });
+
+  function renderPlayer(p, isSub) {
+    var name = typeof p === 'string' ? p : (p.name || p.player || '');
+    var num  = (typeof p === 'object' && p.number) ? p.number : '';
+    return '<div class="lu-player' + (isSub ? ' sub' : '') + '">'
+         + (num ? '<span class="lu-player-num">' + num + '</span>' : '')
+         + _msEsc(name) + '</div>';
+  }
+
+  function renderSubCard(sub) {
+    return '<div class="lu-sub-card">'
+         + '<div class="lu-sub-minute">⏱ ' + _msEsc(sub.minute) + '</div>'
+         + '<div class="lu-sub-out">🔴 ' + _msEsc(sub.playerOut || '–') + '</div>'
+         + '<div class="lu-sub-in">🟢 ' + _msEsc(sub.playerIn  || '–') + '</div>'
+         + '</div>';
+  }
+
+  var uid = 'lu_' + Date.now();
+
+  function makeTeamHTML(side, teamName, fmt, xi, bench, gameSubs) {
+    var sc = side === 'home' ? 'home' : 'away';
+    var hasXI = xi && xi.length > 0;
+    var hasBench = bench && bench.length > 0;
+    var hasGameSubs = gameSubs && gameSubs.length > 0;
+    var tabId_xi    = uid + '_' + side + '_xi';
+    var tabId_bench = uid + '_' + side + '_bench';
+    var tabId_subs  = uid + '_' + side + '_subs';
+    var showTabs = (hasXI && hasBench) || hasGameSubs;
+
+    var html = '<div class="lu-team-col">';
+    html += '<div class="lu-team-name ' + sc + '">' + _msEsc(teamName) + fmt + '</div>';
+
+    if (showTabs) {
+      html += '<div class="lu-tab-bar">';
+      if (hasXI)       html += '<button class="lu-tab-btn active" onclick="luSwitchTab(\'' + tabId_xi    + '\',this)">Starting XI</button>';
+      if (hasBench)    html += '<button class="lu-tab-btn' + (!hasXI?' active':'') + '" onclick="luSwitchTab(\'' + tabId_bench + '\',this)">Bench</button>';
+      if (hasGameSubs) html += '<button class="lu-tab-btn" onclick="luSwitchTab(\'' + tabId_subs  + '\',this)">Subs (' + gameSubs.length + ')</button>';
+      html += '</div>';
+    }
+
+    if (hasXI)       { html += '<div id="' + tabId_xi    + '" class="lu-tab-panel active">'; xi.forEach(function(p)    { html += renderPlayer(p, false); }); html += '</div>'; }
+    if (hasBench)    { html += '<div id="' + tabId_bench + '" class="lu-tab-panel' + (!hasXI?' active':'') + '">'; bench.forEach(function(p)    { html += renderPlayer(p, true);  }); html += '</div>'; }
+    if (hasGameSubs) { html += '<div id="' + tabId_subs  + '" class="lu-tab-panel">'; gameSubs.forEach(function(s) { html += renderSubCard(s); }); html += '</div>'; }
+
+    if (!showTabs) {
+      if (hasXI)       { html += '<div class="lu-section-lbl">Starting XI</div>';    xi.forEach(function(p)    { html += renderPlayer(p, false); }); }
+      if (hasBench)    { html += '<div class="lu-section-lbl">Bench</div>';           bench.forEach(function(p)    { html += renderPlayer(p, true);  }); }
+      if (hasGameSubs) { html += '<div class="lu-section-lbl">Substitutions</div>';  gameSubs.forEach(function(s) { html += renderSubCard(s); }); }
+    }
+    html += '</div>';
+    return html;
   }
 
   var html = '<div class="lu-teams-grid">';
-
-  // Home team
-  html += '<div class="lu-team-col">';
-  html += '<div class="lu-team-name home">' + _msEsc(homeTeam) + homeFmt + '</div>';
-  if (lineups.home && lineups.home.startingXI && lineups.home.startingXI.length > 0) {
-    html += '<div class="lu-section-lbl">Starting XI</div>';
-    html += renderPlayers(lineups.home.startingXI, false);
-  }
-  if (lineups.home && lineups.home.substitutes && lineups.home.substitutes.length > 0) {
-    html += '<div class="lu-section-lbl">Substitutes</div>';
-    html += renderPlayers(lineups.home.substitutes, true);
-  }
-  html += '</div>';
-
-  // Away team
-  html += '<div class="lu-team-col">';
-  html += '<div class="lu-team-name away">' + _msEsc(awayTeam) + awayFmt + '</div>';
-  if (lineups.away && lineups.away.startingXI && lineups.away.startingXI.length > 0) {
-    html += '<div class="lu-section-lbl">Starting XI</div>';
-    html += renderPlayers(lineups.away.startingXI, false);
-  }
-  if (lineups.away && lineups.away.substitutes && lineups.away.substitutes.length > 0) {
-    html += '<div class="lu-section-lbl">Substitutes</div>';
-    html += renderPlayers(lineups.away.substitutes, true);
-  }
-  html += '</div>';
-
+  html += makeTeamHTML('home', homeTeam, homeFmt,
+    lineups && lineups.home ? lineups.home.startingXI  : [],
+    lineups && lineups.home ? lineups.home.substitutes : [],
+    homeSubs);
+  html += makeTeamHTML('away', awayTeam, awayFmt,
+    lineups && lineups.away ? lineups.away.startingXI  : [],
+    lineups && lineups.away ? lineups.away.substitutes : [],
+    awaySubs);
   html += '</div>';
   document.getElementById('luContent').innerHTML = html;
+}
+
+function luSwitchTab(panelId, btn) {
+  var col = btn.closest('.lu-team-col');
+  if (!col) return;
+  col.querySelectorAll('.lu-tab-btn').forEach(function(b)  { b.classList.remove('active'); });
+  col.querySelectorAll('.lu-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  btn.classList.add('active');
+  var panel = document.getElementById(panelId);
+  if (panel) panel.classList.add('active');
 }
 </script>
 </body>
